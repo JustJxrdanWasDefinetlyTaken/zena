@@ -1,6 +1,7 @@
+// CREDIT TO Z-KIT
 const config = {
 	"max-vms": "10", // set this to the amount of vms your api key says its allowed to create. changing this to be higher than your api key will not work
-	"start_url": "https://z-kit.net/vm-landing.html", // url to open when the vm starts
+	"start_url": "https://jmw-v7.pages.dev/vm-homepage.html", // url to open when the vm starts
 
 	"timeout": {
 		"main": 900, // time until the vm is terminated in seconds
