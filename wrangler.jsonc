@@ -30,7 +30,7 @@
 	 * Environment Variables
 	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
 	 */
-	// "vars": { "vmvariable": "sk_live_OiFxbRYrutVZT8CZfrP5XCFkkVPnvZZXJef5YXopxNo" },
+	// "vars": { "MY_VARIABLE": "production_value" },
 	/**
 	 * Note: Use secrets to store sensitive data.
 	 * https://developers.cloudflare.com/workers/configuration/secrets/
