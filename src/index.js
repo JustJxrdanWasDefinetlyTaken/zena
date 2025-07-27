@@ -30,7 +30,7 @@ const log = {
 };
 
 function requireApiKey(env) {
-	if (!env.HB_API_KEY || env.HB_API_KEY === "NULL-KEY") { // DO NOT SET THIS LINE TO YOUR KEY!!! use enviroment variables please i beg
+	if (!env.HB_API_KEY || env.HB_API_KEY === "NULL-KEY") { // DO NOT SET THIS LINE TO YOUR KEY!!! use environment variables please
 		log.error("API Key Checker: HB_API_KEY is not configured.");
 		return new Response(JSON.stringify({
 			error: "ConfigurationError",
@@ -91,14 +91,16 @@ export default {
 				const tag = url.searchParams.get("tag") || `${config.tagbase || 'zena-vm'}-${Date.now()}`;
 
 				const vmConfig = {
-					start_url: config.start_url || "https://www.google.com",
+					start_url: (config.start_url && config.start_url.startsWith("http"))
+						? config.start_url
+						: "https://www.google.com",
 					timeout: {
 						absolute: config.timeout?.main || 900,
 						inactive: config.timeout?.afk || 120,
 						offline: config.timeout?.offline || 5,
 						warning: config.timeout?.warning || 60
 					},
-					webgl: true, // why not
+					webgl: true,
 					dark: typeof config.dark === 'boolean' ? config.dark : true,
 					tag: tag,
 					touch_gestures: {
@@ -106,12 +108,7 @@ export default {
 						pinch: typeof config.mobile === 'boolean' ? config.mobile : true,
 					},
 					search_engine: config.search_engine || "google",
-					quality: {
-						mode: config.quality || "smooth",
-					},
-					/* extension: {
-						field: "https://above.gay/zena-ext.zip" // zena's official utility extension
-					} */
+					quality: config.quality || "smooth",
 				};
 
 				const createResponse = await fetch(`${HYPERBEAM_API_BASE}/vm`, {
