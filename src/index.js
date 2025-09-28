@@ -1,203 +1,167 @@
 const config = {
-	"max-vms": "10", // set this to the amount of vms your api key says its allowed to create. changing this to be higher than your api key will not work
-	"start_url": "https://jrdn-vm-engine.pages.dev", // url to open when the vm starts
-
-	"timeout": {
-		"main": 900, // time until the vm is terminated in seconds
-		"afk": 120, // if the user is afk for this time, the vm will be terminated
-		"offline": 5, // if the vm is offline for this time, the vm will be terminated
-		"warning": 60 // show a warning when this much time is left
-	},
-
-	"dark": true, // dark mode
-
-	"tagbase": "zena-vm", // base tag for the vm (a timestamp will also be added). this will be used to identify the vm
-	"mobile": true, // mobile support
-
-	"search_engine": "google", // search engine to use. allowed values: duckduckgo, google, startpage, ecosia, brave
-
-	"quality": "smooth", // quality of the vm. allowed values: smooth, blocky or sharp. smooth is recommended as sharp uses triple the bandwidth
+  "max-vms": "10",
+  "start_url": "https://jrdn-vm-engine.pages.dev",
+  "timeout": {
+    "main": 900,
+    "afk": 120,
+    "offline": 5,
+    "warning": 60
+  },
+  "dark": true,
+  "tagbase": "zena-vm",
+  "mobile": true,
+  "search_engine": "google",
+  "quality": "smooth",
 };
 
 const HYPERBEAM_API_BASE = "https://engine.hyperbeam.com/v0";
 const MAX_ACTIVE_VMS = parseInt(config['max-vms'] || "10", 10);
 
 const log = {
-	info: console.log,
-	warn: console.warn,
-	error: console.error,
-	success: console.log
+  info: console.log,
+  warn: console.warn,
+  error: console.error,
+  success: console.log
 };
 
 function requireApiKey(env) {
-	if (!env.HB_API_KEY || env.HB_API_KEY === "NULL-KEY") { // DO NOT SET THIS LINE TO YOUR KEY!!! use enviroment variables please i beg
-		log.error("API Key Checker: HB_API_KEY is not configured.");
-		return new Response(JSON.stringify({
-			error: "ConfigurationError",
-			message: "Hyperbeam API key is not configured on the server.",
-		}), { status: 500, headers: { 'Content-Type': 'application/json' } });
-	}
-	return null;
+  if (!env.HB_API_KEY || env.HB_API_KEY === "NULL-KEY") {
+    return new Response(JSON.stringify({
+      error: "ConfigurationError",
+      message: "Hyperbeam API key is not configured on the server.",
+    }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+  }
+  return null;
 }
 
 export default {
-	async fetch(request, env, ctx) {
-		const corsHeaders = {
-			"Access-Control-Allow-Origin": "*",
-			"Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-			"Access-Control-Allow-Headers": "Content-Type, Authorization"
-		};
+  async fetch(request, env, ctx) {
+    const corsHeaders = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization"
+    };
 
-		if (request.method === "OPTIONS") {
-			return new Response(null, { status: 204, headers: corsHeaders });
-		}
+    if (request.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: corsHeaders });
+    }
 
-		const apiKeyErrorResponse = requireApiKey(env);
-		if (apiKeyErrorResponse) {
-			return new Response(apiKeyErrorResponse.body, { status: apiKeyErrorResponse.status, headers: { ...corsHeaders, ...apiKeyErrorResponse.headers } });
-		}
+    const apiKeyErrorResponse = requireApiKey(env);
+    if (apiKeyErrorResponse) {
+      return new Response(apiKeyErrorResponse.body, {
+        status: apiKeyErrorResponse.status,
+        headers: { ...corsHeaders, ...apiKeyErrorResponse.headers }
+      });
+    }
 
-		const HB_API_KEY = env.HB_API_KEY;
-		const url = new URL(request.url);
+    const HB_API_KEY = env.HB_API_KEY;
+    const url = new URL(request.url);
 
-		if (request.method === "GET" && url.pathname === "/start-vm") {
-			try {
-				log.info("Checking active Hyperbeam VMs...");
-				const listResponse = await fetch(`${HYPERBEAM_API_BASE}/vm`, {
-					headers: { Authorization: `Bearer ${HB_API_KEY}` },
-				});
+    if (request.method === "GET" && url.pathname === "/start-vm") {
+      try {
+        const listResponse = await fetch(`${HYPERBEAM_API_BASE}/vm`, {
+          headers: { Authorization: `Bearer ${HB_API_KEY}` },
+        });
+        if (!listResponse.ok) {
+          const errorData = await listResponse.json().catch(() => ({}));
+          return new Response(JSON.stringify({
+            error: "HyperbeamAPIError",
+            message: "Failed to list VMs",
+            details: errorData
+          }), { status: listResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        const activeVMs = await listResponse.json();
+        if (activeVMs.length >= MAX_ACTIVE_VMS) {
+          return new Response(JSON.stringify({
+            error: "TooManyVMs",
+            message: "Too many VMs active."
+          }), { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
 
-				if (!listResponse.ok) {
-					const errorData = await listResponse.json().catch(() => ({ message: "Failed to parse error from Hyperbeam" }));
-					log.error(`Hyperbeam API error (list VMs): ${listResponse.status}`, errorData);
-					return new Response(JSON.stringify({
-						error: "HyperbeamAPIError",
-						message: "Failed to list VMs from Hyperbeam.",
-						details: errorData
-					}), { status: listResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-				}
-				const activeVMs = await listResponse.json();
-				log.info(`Found ${activeVMs.length} active Hyperbeam VM(s).`);
+        const tag = url.searchParams.get("tag") || `${config.tagbase}-${Date.now()}`;
+        const vmConfig = {
+          start_url: config.start_url,
+          timeout: {
+            absolute: config.timeout?.main || 900,
+            inactive: config.timeout?.afk || 120,
+            offline: config.timeout?.offline || 5,
+            warning: config.timeout?.warning || 60
+          },
+          webgl: true,
+          dark: config.dark,
+          tag,
+          touch_gestures: { swipe: config.mobile, pinch: config.mobile },
+          search_engine: config.search_engine,
+          quality: { mode: config.quality }
+        };
 
-				if (activeVMs.length >= MAX_ACTIVE_VMS) {
-					log.warn(`Hyperbeam VM limit reached (${MAX_ACTIVE_VMS}). Denying request.`);
-					return new Response(JSON.stringify({
-						error: "TooManyVMs",
-						message: "Too many VMs are active right now. Check back later.",
-					}), { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-				}
+        const createResponse = await fetch(`${HYPERBEAM_API_BASE}/vm`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${HB_API_KEY}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(vmConfig)
+        });
 
-				log.info("Limit not reached. Attempting to create a new Hyperbeam VM...");
-				const tag = url.searchParams.get("tag") || `${config.tagbase || 'zena-vm'}-${Date.now()}`;
+        if (!createResponse.ok) {
+          const errorData = await createResponse.json().catch(() => ({}));
+          return new Response(JSON.stringify({
+            error: "HyperbeamAPIError",
+            message: "Failed to create VM",
+            details: errorData
+          }), { status: createResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
 
-				const vmConfig = {
-					start_url: config.start_url || "https://www.google.com",
-					timeout: {
-						absolute: config.timeout?.main || 900,
-						inactive: config.timeout?.afk || 120,
-						offline: config.timeout?.offline || 5,
-						warning: config.timeout?.warning || 60
-					},
-					webgl: true, // why not
-					dark: typeof config.dark === 'boolean' ? config.dark : true,
-					tag: tag,
-					touch_gestures: {
-						swipe: typeof config.mobile === 'boolean' ? config.mobile : true,
-						pinch: typeof config.mobile === 'boolean' ? config.mobile : true,
-					},
-					search_engine: config.search_engine || "google",
-					quality: {
-						mode: config.quality || "smooth",
-					},
-					/* extension: {
-						field: "https://above.gay/zena-ext.zip" // zena's official utility extension
-					} */
-				};
+        const newInstance = await createResponse.json();
+        return new Response(JSON.stringify({
+          session_id: newInstance.session_id,
+          session_url: `/session/${newInstance.session_id}`
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-				const createResponse = await fetch(`${HYPERBEAM_API_BASE}/vm`, {
-					method: 'POST',
-					headers: {
-						Authorization: `Bearer ${HB_API_KEY}`,
-						'Content-Type': 'application/json',
-					},
-					body: JSON.stringify(vmConfig),
-				});
+      } catch (e) {
+        return new Response(JSON.stringify({
+          error: "InternalServerError",
+          message: e.message
+        }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+    }
 
-				if (!createResponse.ok) {
-					const errorData = await createResponse.json().catch(() => ({ message: "Failed to parse error from Hyperbeam" }));
-					log.error(`Hyperbeam API error (create VM): ${createResponse.status}`, errorData);
-					return new Response(JSON.stringify({
-						error: "HyperbeamAPIError",
-						message: "Failed to create VM with Hyperbeam.",
-						details: errorData
-					}), { status: createResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-				}
+    if (request.method === "GET" && url.pathname.startsWith("/session/")) {
+      const sessionId = url.pathname.split("/").pop();
+      if (!sessionId) {
+        return new Response("Bad Request", { status: 400, headers: corsHeaders });
+      }
+      const resp = await fetch(`${HYPERBEAM_API_BASE}/vm/${sessionId}`, {
+        headers: { Authorization: `Bearer ${HB_API_KEY}` }
+      });
+      if (!resp.ok) {
+        return new Response("Not Found", { status: resp.status, headers: corsHeaders });
+      }
+      const data = await resp.json();
+      return new Response(`
+        <html><head><style>html,body,iframe{margin:0;padding:0;height:100%;width:100%;border:0}</style></head>
+        <body><iframe src="${data.embed_url}" allow="clipboard-read; clipboard-write; fullscreen *; microphone; camera; autoplay; display-capture"></iframe></body>
+        </html>
+      `, { status: 200, headers: { 'Content-Type': 'text/html', ...corsHeaders } });
+    }
 
-				const newComputerInstance = await createResponse.json();
-				log.success(`New Hyperbeam VM created successfully: ${newComputerInstance.session_id} (Tag: ${tag})`);
-				return new Response(JSON.stringify(newComputerInstance), {
-					headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-				});
-			} catch (error) {
-				log.error("Error in /start-vm handler:", error.message, error.stack);
-				return new Response(JSON.stringify({
-					error: "InternalServerError",
-					message: "An unexpected error occurred.",
-					details: error.message,
-				}), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-			}
-		} else if (request.method === "DELETE" && url.pathname.startsWith("/kill-vm/")) {
-			const parts = url.pathname.split('/');
-			const sessionId = parts[parts.length - 1];
+    if (request.method === "DELETE" && url.pathname.startsWith("/kill-vm/")) {
+      const sessionId = url.pathname.split("/").pop();
+      if (!sessionId) {
+        return new Response(JSON.stringify({ error: "BadRequest" }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      const deleteUrl = `${HYPERBEAM_API_BASE}/vm/${sessionId}`;
+      const deleteResponse = await fetch(deleteUrl, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${HB_API_KEY}` },
+      });
+      if (deleteResponse.status === 204 || deleteResponse.status === 200) {
+        return new Response(JSON.stringify({ message: `VM ${sessionId} exited.` }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      return new Response("Error", { status: deleteResponse.status, headers: corsHeaders });
+    }
 
-			if (!sessionId || sessionId.trim() === "") {
-				log.warn("/kill-vm: sessionId parameter is missing or empty.");
-				return new Response(JSON.stringify({
-					error: "BadRequest",
-					message: "A valid Session ID is required in the path.",
-				}), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-			}
-			try {
-				const deleteUrl = `${HYPERBEAM_API_BASE}/vm/${sessionId}`;
-				log.info(`Attempting to terminate Hyperbeam VM with ID: ${sessionId} at ${deleteUrl}`);
-
-				const deleteResponse = await fetch(deleteUrl, {
-					method: 'DELETE',
-					headers: { Authorization: `Bearer ${HB_API_KEY}` },
-				});
-
-				if (deleteResponse.status === 204 || deleteResponse.status === 200) {
-					log.success(`Hyperbeam VM ${sessionId} terminated successfully via API.`);
-					return new Response(JSON.stringify({
-						message: `Virtual machine ${sessionId} exited successfully.`,
-					}), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-				} else if (deleteResponse.status === 404) {
-					const errorData = await deleteResponse.json().catch(() => ({ message: "VM not found" }));
-					log.warn(`Hyperbeam VM ${sessionId} not found (404).`, errorData);
-					return new Response(JSON.stringify({
-						error: "VMNotFound",
-						message: `Virtual machine ${sessionId} not found.`,
-						details: errorData
-					}), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-				} else {
-					const errorData = await deleteResponse.json().catch(() => ({ message: "Failed to parse error from Hyperbeam" }));
-					log.error(`Hyperbeam API error (delete VM): ${deleteResponse.status}`, errorData);
-					return new Response(JSON.stringify({
-						error: "HyperbeamAPIError",
-						message: `Failed to terminate VM ${sessionId} via Hyperbeam.`,
-						details: errorData
-					}), { status: deleteResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-				}
-			} catch (error) {
-				log.error(`Error terminating Hyperbeam VM ${sessionId}:`, error.message, error.stack);
-				return new Response(JSON.stringify({
-					error: "InternalServerError",
-					message: "An unexpected error occurred while processing the terminate VM request.",
-					details: error.message,
-				}), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-			}
-		}
-
-		return new Response("Not Found", { status: 404, headers: corsHeaders });
-	},
+    return new Response("Not Found", { status: 404, headers: corsHeaders });
+  }
 };
