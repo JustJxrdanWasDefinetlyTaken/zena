@@ -10,7 +10,7 @@ const config = {
   "dark": true,
   "tagbase": "zena-vm",
   "mobile": true,
-  "search_engine": "google",
+  "search_engine": "duckduckgo",
   "quality": "smooth",
 };
 
