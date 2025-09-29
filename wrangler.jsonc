@@ -4,7 +4,7 @@
  */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "zena-vm",
+	"name": "zena-instance",
 	"main": "src/index.js",
 	"compatibility_flags": [
 		"nodejs_compat"
